@@ -3,6 +3,15 @@
 ##
 ## Get latest from https://github.com/github/gitignore/blob/main/VisualStudio.gitignore
 
+# Environment variables (Firebase credentials — never commit these)
+.env
+.env.local
+.env.*.local
+
+# Vite build output
+dist/
+node_modules/
+
 # User-specific files
 *.rsuser
 *.suo

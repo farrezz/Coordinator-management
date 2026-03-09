@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { DAYS_LONG, CATEGORIES } from "../constants/index.js";
 import { makeEmptyWeek, makeEmptyGoals } from "../utils/dataUtils.js";
+import { storage } from "../utils/storage.js";
 
 export default function CasesPage({ weekNum, year, isAdmin, flashSaved, s, t }) {
   const [weekData, setWeekData] = useState(makeEmptyWeek());
@@ -16,13 +17,13 @@ export default function CasesPage({ weekNum, year, isAdmin, flashSaved, s, t }) 
   async function loadData() {
     setLoading(true);
     let d = makeEmptyWeek(), g = makeEmptyGoals();
-    try { let r = await window.storage.get(`y${year}-week-${weekNum}`, true); d = JSON.parse(r.value); } catch (e) {}
-    try { let r = await window.storage.get(`y${year}-goals-${weekNum}`, true); g = JSON.parse(r.value); } catch (e) {}
+    try { let r = await storage.get(`y${year}-week-${weekNum}`, true); d = JSON.parse(r.value); } catch (e) {}
+    try { let r = await storage.get(`y${year}-goals-${weekNum}`, true); g = JSON.parse(r.value); } catch (e) {}
     setWeekData(d); setGoals(g); setLoading(false);
   }
 
-  async function saveWeek(data) { try { await window.storage.set(`y${year}-week-${weekNum}`, JSON.stringify(data), true); flashSaved(); } catch (e) {} }
-  async function saveGoals(g) { try { await window.storage.set(`y${year}-goals-${weekNum}`, JSON.stringify(g), true); flashSaved(); } catch (e) {} }
+  async function saveWeek(data) { try { await storage.set(`y${year}-week-${weekNum}`, JSON.stringify(data), true); flashSaved(); } catch (e) {} }
+  async function saveGoals(g) { try { await storage.set(`y${year}-goals-${weekNum}`, JSON.stringify(g), true); flashSaved(); } catch (e) {} }
 
   function handleAdjust(day, cat, amt) {
     let u = { ...weekData }; u[day] = { ...u[day] };
