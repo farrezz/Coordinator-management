@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { DAYS, ABSENCE_TYPES } from "../constants/index.js";
 import { defaultScheduleConfig } from "../utils/dataUtils.js";
+import { storage } from "../utils/storage.js";
 
 export default function SchedulePage({ weekNum, year, isAdmin, flashSaved, s, t }) {
   const [config, setConfig] = useState(null);
@@ -28,29 +29,29 @@ export default function SchedulePage({ weekNum, year, isAdmin, flashSaved, s, t 
   async function loadAll() {
     setLoading(true);
     let cfg = null;
-    try { let r = await window.storage.get("schedule-config", true); cfg = JSON.parse(r.value); } catch (e) {}
+    try { let r = await storage.get("schedule-config", true); cfg = JSON.parse(r.value); } catch (e) {}
     if (!cfg) cfg = defaultScheduleConfig();
     if (cfg.tasks && !cfg.rotatingTasks) { cfg.rotatingTasks = cfg.tasks; delete cfg.tasks; }
     setConfig(cfg);
     let abs = {};
-    try { let r = await window.storage.get(`y${year}-abs-${weekNum}`, true); abs = JSON.parse(r.value); } catch (e) {}
+    try { let r = await storage.get(`y${year}-abs-${weekNum}`, true); abs = JSON.parse(r.value); } catch (e) {}
     setAbsences(abs);
     let reqs = [];
-    try { let r = await window.storage.get(`y${year}-reqs-${weekNum}`, true); reqs = JSON.parse(r.value); } catch (e) {}
+    try { let r = await storage.get(`y${year}-reqs-${weekNum}`, true); reqs = JSON.parse(r.value); } catch (e) {}
     setRequests(reqs);
     let ov = {};
-    try { let r = await window.storage.get(`y${year}-taskover-${weekNum}`, true); ov = JSON.parse(r.value); } catch (e) {}
+    try { let r = await storage.get(`y${year}-taskover-${weekNum}`, true); ov = JSON.parse(r.value); } catch (e) {}
     setTaskOverrides(ov);
     setLoading(false);
   }
 
-  async function saveConfig(cfg) { setConfig(cfg); try { await window.storage.set("schedule-config", JSON.stringify(cfg), true); flashSaved(); } catch (e) {} }
-  async function saveAbsences(abs) { setAbsences(abs); try { await window.storage.set(`y${year}-abs-${weekNum}`, JSON.stringify(abs), true); flashSaved(); } catch (e) {} }
+  async function saveConfig(cfg) { setConfig(cfg); try { await storage.set("schedule-config", JSON.stringify(cfg), true); flashSaved(); } catch (e) {} }
+  async function saveAbsences(abs) { setAbsences(abs); try { await storage.set(`y${year}-abs-${weekNum}`, JSON.stringify(abs), true); flashSaved(); } catch (e) {} }
   async function saveRequests(reqs) {
     setRequests(reqs);
-    try { let r = await window.storage.set(`y${year}-reqs-${weekNum}`, JSON.stringify(reqs), true); if (r) flashSaved(); } catch (e) { console.log("saveRequests error: " + e.message); }
+    try { let r = await storage.set(`y${year}-reqs-${weekNum}`, JSON.stringify(reqs), true); if (r) flashSaved(); } catch (e) { console.log("saveRequests error: " + e.message); }
   }
-  async function saveTaskOverrides(ov) { setTaskOverrides(ov); try { await window.storage.set(`y${year}-taskover-${weekNum}`, JSON.stringify(ov), true); flashSaved(); } catch (e) {} }
+  async function saveTaskOverrides(ov) { setTaskOverrides(ov); try { await storage.set(`y${year}-taskover-${weekNum}`, JSON.stringify(ov), true); flashSaved(); } catch (e) {} }
 
   function getTaskForGroup(gi) {
     if (!config) return "";
