@@ -24,26 +24,26 @@ export default function SchedulePage({ weekNum, year, isAdmin, flashSaved, s, t 
   const [editingTaskValue, setEditingTaskValue] = useState("");
   const [reqSent, setReqSent] = useState(false);
 
-  useEffect(() => { loadAll(); }, [weekNum, year]);
-
-  async function loadAll() {
+  useEffect(() => {
     setLoading(true);
-    let cfg = null;
-    try { let r = await storage.get("schedule-config", true); cfg = JSON.parse(r.value); } catch (e) {}
-    if (!cfg) cfg = defaultScheduleConfig();
-    if (cfg.tasks && !cfg.rotatingTasks) { cfg.rotatingTasks = cfg.tasks; delete cfg.tasks; }
-    setConfig(cfg);
-    let abs = {};
-    try { let r = await storage.get(`y${year}-abs-${weekNum}`, true); abs = JSON.parse(r.value); } catch (e) {}
-    setAbsences(abs);
-    let reqs = [];
-    try { let r = await storage.get(`y${year}-reqs-${weekNum}`, true); reqs = JSON.parse(r.value); } catch (e) {}
-    setRequests(reqs);
-    let ov = {};
-    try { let r = await storage.get(`y${year}-taskover-${weekNum}`, true); ov = JSON.parse(r.value); } catch (e) {}
-    setTaskOverrides(ov);
-    setLoading(false);
-  }
+    let got = { cfg: false, abs: false, reqs: false, ov: false };
+    function checkDone() { if (got.cfg && got.abs && got.reqs && got.ov) setLoading(false); }
+    const u1 = storage.subscribe("schedule-config", (r) => {
+      let cfg = r ? JSON.parse(r.value) : defaultScheduleConfig();
+      if (cfg.tasks && !cfg.rotatingTasks) { cfg.rotatingTasks = cfg.tasks; delete cfg.tasks; }
+      setConfig(cfg); got.cfg = true; checkDone();
+    });
+    const u2 = storage.subscribe(`y${year}-abs-${weekNum}`, (r) => {
+      setAbsences(r ? JSON.parse(r.value) : {}); got.abs = true; checkDone();
+    });
+    const u3 = storage.subscribe(`y${year}-reqs-${weekNum}`, (r) => {
+      setRequests(r ? JSON.parse(r.value) : []); got.reqs = true; checkDone();
+    });
+    const u4 = storage.subscribe(`y${year}-taskover-${weekNum}`, (r) => {
+      setTaskOverrides(r ? JSON.parse(r.value) : {}); got.ov = true; checkDone();
+    });
+    return () => { u1(); u2(); u3(); u4(); };
+  }, [weekNum, year]);
 
   async function saveConfig(cfg) { setConfig(cfg); try { await storage.set("schedule-config", JSON.stringify(cfg), true); flashSaved(); } catch (e) {} }
   async function saveAbsences(abs) { setAbsences(abs); try { await storage.set(`y${year}-abs-${weekNum}`, JSON.stringify(abs), true); flashSaved(); } catch (e) {} }
