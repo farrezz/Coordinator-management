@@ -2,6 +2,8 @@ import { useState, useEffect } from "react";
 import { DAYS_LONG, CATEGORIES } from "../constants/index.js";
 import { makeEmptyWeek, makeEmptyGoals } from "../utils/dataUtils.js";
 import { storage } from "../utils/storage.js";
+import CaseList from "./CaseList.jsx";
+import BeslutTable from "./BeslutTable.jsx";
 
 export default function CasesPage({ weekNum, year, isAdmin, flashSaved, s, t }) {
   const [weekData, setWeekData] = useState(makeEmptyWeek());
@@ -12,15 +14,20 @@ export default function CasesPage({ weekNum, year, isAdmin, flashSaved, s, t }) 
   const [editGoal, setEditGoal] = useState(null);
   const [editGoalValue, setEditGoalValue] = useState("");
 
-  useEffect(() => { loadData(); }, [weekNum, year]);
-
-  async function loadData() {
+  useEffect(() => {
     setLoading(true);
-    let d = makeEmptyWeek(), g = makeEmptyGoals();
-    try { let r = await storage.get(`y${year}-week-${weekNum}`, true); d = JSON.parse(r.value); } catch (e) {}
-    try { let r = await storage.get(`y${year}-goals-${weekNum}`, true); g = JSON.parse(r.value); } catch (e) {}
-    setWeekData(d); setGoals(g); setLoading(false);
-  }
+    let gotWeek = false, gotGoals = false;
+    function checkDone() { if (gotWeek && gotGoals) setLoading(false); }
+    const unsub1 = storage.subscribe(`y${year}-week-${weekNum}`, (r) => {
+      setWeekData(r ? JSON.parse(r.value) : makeEmptyWeek());
+      gotWeek = true; checkDone();
+    });
+    const unsub2 = storage.subscribe(`y${year}-goals-${weekNum}`, (r) => {
+      setGoals(r ? JSON.parse(r.value) : makeEmptyGoals());
+      gotGoals = true; checkDone();
+    });
+    return () => { unsub1(); unsub2(); };
+  }, [weekNum, year]);
 
   async function saveWeek(data) { try { await storage.set(`y${year}-week-${weekNum}`, JSON.stringify(data), true); flashSaved(); } catch (e) {} }
   async function saveGoals(g) { try { await storage.set(`y${year}-goals-${weekNum}`, JSON.stringify(g), true); flashSaved(); } catch (e) {} }
@@ -136,6 +143,8 @@ export default function CasesPage({ weekNum, year, isAdmin, flashSaved, s, t }) 
           </tfoot>
         </table>
       </div>
+      <CaseList s={s} t={t} />
+      <BeslutTable t={t} weekNum={weekNum} year={year} />
     </>
   );
 }

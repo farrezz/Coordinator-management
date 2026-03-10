@@ -1,8 +1,12 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { ADMIN_PIN, NOW_WEEK, NOW_YEAR, themes } from "./constants/index.js";
 import { T } from "./utils/styles.js";
+import { storage } from "./utils/storage.js";
 import CasesPage from "./components/CasesPage.jsx";
 import SchedulePage from "./components/SchedulePage.jsx";
+import AppearancePanel from "./components/AppearancePanel.jsx";
+
+const DEFAULT_SETTINGS = { theme: "dark", bgImage: null, bgImageOpacity: 0.12, customBgColor: null };
 
 export default function App() {
   const [page, setPage] = useState("cases");
@@ -13,9 +17,25 @@ export default function App() {
   const [weekNum, setWeekNum] = useState(NOW_WEEK);
   const [year, setYear] = useState(NOW_YEAR);
   const [saved, setSaved] = useState(false);
-  const [theme, setTheme] = useState("dark");
+  const [appSettings, setAppSettings] = useState(DEFAULT_SETTINGS);
 
+  // Subscribe to shared appearance settings from Firestore
+  useEffect(() => {
+    const unsub = storage.subscribe("app-settings", (r) => {
+      setAppSettings(r ? { ...DEFAULT_SETTINGS, ...JSON.parse(r.value) } : DEFAULT_SETTINGS);
+    });
+    return () => unsub();
+  }, []);
+
+  function saveSettings(updated) {
+    setAppSettings(updated);
+    storage.set("app-settings", JSON.stringify(updated));
+  }
+
+  const theme = appSettings.theme ?? "dark";
   let s = T(theme);
+  let t = { ...themes[theme] };
+  if (appSettings.customBgColor) t = { ...t, bg: appSettings.customBgColor };
 
   function tryPin() {
     if (pinInput === ADMIN_PIN) { setIsAdmin(true); setShowPinModal(false); setPinInput(""); setPinError(false); }
@@ -25,22 +45,33 @@ export default function App() {
   function prevWeek() { if (weekNum > 1) setWeekNum(weekNum - 1); else { setYear(year - 1); setWeekNum(52); } }
   function nextWeek() { if (weekNum < 52) setWeekNum(weekNum + 1); else { setYear(year + 1); setWeekNum(1); } }
 
-  let t = themes[theme];
-
   return (
-    <div style={s.page}>
-      <div style={s.container}>
+    <div style={{ ...s.page, background: t.bg, position: "relative" }}>
+      {/* Background image overlay */}
+      {appSettings.bgImage && (
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 0,
+          backgroundImage: `url(${appSettings.bgImage})`,
+          backgroundSize: "cover", backgroundPosition: "center",
+          opacity: appSettings.bgImageOpacity ?? 0.12,
+          pointerEvents: "none",
+        }} />
+      )}
+
+      <div style={{ ...s.container, position: "relative", zIndex: 1 }}>
         {/* header */}
         <div style={s.header}>
           <div style={{ display: "flex", alignItems: "center", gap: "16px", flexWrap: "wrap" }}>
-            <h1 style={s.title}>📋 Case Tracker</h1>
+            <h1 style={s.title}>Malmö 16</h1>
             <div style={s.tabs}>
               <button style={page === "cases" ? s.tabActive : s.tab} onClick={() => setPage("cases")}>Ärenden</button>
               <button style={page === "schedule" ? s.tabActive : s.tab} onClick={() => setPage("schedule")}>Schema</button>
             </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
-            <button style={s.themeBtn} onClick={() => setTheme(theme === "dark" ? "light" : "dark")} title="Byt tema">
+            <button style={s.themeBtn}
+              onClick={() => saveSettings({ ...appSettings, theme: theme === "dark" ? "light" : "dark" })}
+              title="Byt tema">
               {theme === "dark" ? "☀️" : "🌙"}
             </button>
             <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
@@ -71,6 +102,11 @@ export default function App() {
             </div>
           </div>
         </div>
+
+        {/* Appearance panel — admin only */}
+        {isAdmin && (
+          <AppearancePanel t={t} appSettings={appSettings} onSave={saveSettings} />
+        )}
 
         {/* pin modal */}
         {showPinModal && (
