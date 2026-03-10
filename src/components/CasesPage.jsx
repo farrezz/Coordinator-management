@@ -32,10 +32,13 @@ export default function CasesPage({ weekNum, year, isAdmin, flashSaved, s, t }) 
   async function saveWeek(data) { try { await storage.set(`y${year}-week-${weekNum}`, JSON.stringify(data), true); flashSaved(); } catch (e) {} }
   async function saveGoals(g) { try { await storage.set(`y${year}-goals-${weekNum}`, JSON.stringify(g), true); flashSaved(); } catch (e) {} }
 
-  function handleAdjust(day, cat, amt) {
-    let u = { ...weekData }; u[day] = { ...u[day] };
-    let v = (u[day][cat] || 0) + amt; if (v < 0) v = 0;
-    u[day][cat] = v; setWeekData(u); saveWeek(u);
+  async function handleAdjust(day, cat, amt) {
+    await storage.adjust(`y${year}-week-${weekNum}`, (current) => {
+      const data = current || makeEmptyWeek();
+      const v = Math.max(0, (data[day]?.[cat] || 0) + amt);
+      return { ...data, [day]: { ...data[day], [cat]: v } };
+    });
+    flashSaved();
   }
   function startEdit(day, cat) { if (!isAdmin) return; setEditCell({ day, cat }); setEditValue(String(weekData[day][cat])); }
   function confirmEdit() {
