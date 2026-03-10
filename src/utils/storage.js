@@ -1,4 +1,4 @@
-import { doc, getDoc, setDoc, onSnapshot } from "firebase/firestore";
+import { doc, getDoc, setDoc, onSnapshot, runTransaction } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { db, firebaseStorage } from "./firebase.js";
 
@@ -14,6 +14,14 @@ export const storage = {
   subscribe(key, callback) {
     return onSnapshot(doc(db, "appData", key), (snap) => {
       callback(snap.exists() ? { value: snap.data().value } : null);
+    });
+  },
+  async adjust(key, updater) {
+    const docRef = doc(db, "appData", key);
+    await runTransaction(db, async (tx) => {
+      const snap = await tx.get(docRef);
+      const current = snap.exists() ? JSON.parse(snap.data().value) : null;
+      tx.set(docRef, { value: JSON.stringify(updater(current)) });
     });
   },
   async uploadImage(file) {
