@@ -1,15 +1,24 @@
 import { useState, useEffect } from "react";
-import { DAYS } from "../constants/index.js";
 import { storage } from "../utils/storage.js";
+
+const WEEK_DAYS = ["Mån", "Tis", "Ons", "Tor", "Fre", "Lör", "Sön"];
 import { getWeekNumber, getMondayOfWeek, toDateKey } from "../utils/dateUtils.js";
 
 const EMPTY = { counts: {} };
 const NOW_WEEK = getWeekNumber(new Date());
 const NOW_YEAR = new Date().getFullYear();
 
+function getDiffDays(date) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  return Math.round((d - today) / 86400000);
+}
+
 function datesForWeek(year, weekNum) {
   const monday = getMondayOfWeek(year, weekNum);
-  return Array.from({ length: 5 }, (_, i) => {
+  return Array.from({ length: 7 }, (_, i) => {
     const d = new Date(monday);
     d.setDate(monday.getDate() + i);
     return d;
@@ -68,7 +77,7 @@ export default function BeslutTable({ t, weekNum, year }) {
               <th style={{ padding: "8px 12px", textAlign: "left", fontSize: "12px", color: t.textMuted, fontWeight: 600, borderBottom: `1px solid ${t.border}`, background: t.cardAlt, minWidth: "90px" }}>
                 Vecka
               </th>
-              {DAYS.map((d) => (
+              {WEEK_DAYS.map((d) => (
                 <th key={d} style={{ padding: "8px 10px", textAlign: "center", fontSize: "12px", color: t.textMuted, fontWeight: 600, borderBottom: `1px solid ${t.border}`, background: t.cardAlt }}>
                   {d}
                 </th>
@@ -95,9 +104,14 @@ export default function BeslutTable({ t, weekNum, year }) {
                     const key = toDateKey(date);
                     const count = data.counts[key] || 0;
                     const isEditing = editCell === key;
+                    const diff = getDiffDays(date);
+                    const urgentBg = diff === 0 ? "rgba(99,130,255,0.13)"
+                      : count > 0 && diff <= 1 ? "rgba(220,50,50,0.10)"
+                      : count > 0 && diff >= 2 && diff <= 3 ? "rgba(230,170,0,0.10)"
+                      : "transparent";
                     return (
-                      <td key={key} style={{ padding: "8px 6px", textAlign: "center", borderBottom: `1px solid ${t.borderLight}`, minWidth: "70px" }}>
-                        <div style={{ fontSize: "11px", color: t.textFaint, marginBottom: "4px" }}>
+                      <td key={key} style={{ padding: "8px 6px", textAlign: "center", borderBottom: `1px solid ${t.borderLight}`, minWidth: "70px", background: urgentBg, transition: "background 0.2s" }}>
+                        <div style={{ fontSize: "11px", color: diff === 0 ? t.accent : t.textFaint, fontWeight: diff === 0 ? 700 : 400, marginBottom: "4px" }}>
                           {date.getDate()}e
                         </div>
                         {isEditing ? (
