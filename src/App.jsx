@@ -18,6 +18,7 @@ export default function App() {
   const [year, setYear] = useState(NOW_YEAR);
   const [saved, setSaved] = useState(false);
   const [appSettings, setAppSettings] = useState(DEFAULT_SETTINGS);
+  const [localTheme, setLocalTheme] = useState(() => localStorage.getItem("localTheme") || null);
 
   // Subscribe to shared appearance settings from Firestore
   useEffect(() => {
@@ -32,7 +33,16 @@ export default function App() {
     storage.set("app-settings", JSON.stringify(updated));
   }
 
-  const theme = appSettings.theme ?? "dark";
+  const SEASONAL = ["christmas", "valentines", "summer"];
+  const adminTheme = appSettings.theme ?? "dark";
+  // Seasonal themes set by admin override personal preference; dark/light is personal
+  const theme = SEASONAL.includes(adminTheme) ? adminTheme : (localTheme || adminTheme);
+
+  function toggleTheme() {
+    const next = theme === "dark" ? "light" : "dark";
+    setLocalTheme(next);
+    localStorage.setItem("localTheme", next);
+  }
   let s = T(theme);
   let t = { ...themes[theme] };
   if (appSettings.customBgColor) t = { ...t, bg: appSettings.customBgColor };
@@ -70,7 +80,7 @@ export default function App() {
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
             <button style={s.themeBtn}
-              onClick={() => saveSettings({ ...appSettings, theme: theme === "dark" ? "light" : "dark" })}
+              onClick={toggleTheme}
               title="Byt tema">
               {theme === "dark" ? "☀️" : "🌙"}
             </button>
