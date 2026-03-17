@@ -18,7 +18,7 @@ export const ABSENCE_TYPES = {
   semester: { label: "Semester", color: "#dc2626", text: "#fff" },
   sjuk: { label: "Sjuk", color: "#eab308", text: "#000" },
   vab: { label: "VAB", color: "#e67e22", text: "#fff" },
-  annan: { label: "Annan", color: "#7c3aed", text: "#fff" },
+  annan: { label: "Övrigt", color: "#7c3aed", text: "#fff" },
 };
 
 export const themes = {

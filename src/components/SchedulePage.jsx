@@ -1,33 +1,36 @@
 import { useState, useEffect } from "react";
 import { DAYS, ABSENCE_TYPES } from "../constants/index.js";
+import { getWeekNumber } from "../utils/dateUtils.js";
 import { defaultScheduleConfig } from "../utils/dataUtils.js";
 import { storage } from "../utils/storage.js";
 
 export default function SchedulePage({ weekNum, year, isAdmin, flashSaved, s, t }) {
   const [config, setConfig] = useState(null);
   const [absences, setAbsences] = useState({});
-  const [requests, setRequests] = useState([]);
   const [taskOverrides, setTaskOverrides] = useState({});
   const [loading, setLoading] = useState(true);
 
   const [showAddMember, setShowAddMember] = useState(null);
   const [newMemberName, setNewMemberName] = useState("");
-  const [showRequest, setShowRequest] = useState(false);
-  const [reqName, setReqName] = useState("");
-  const [reqDay, setReqDay] = useState("Mån");
-  const [reqType, setReqType] = useState("semester");
   const [showEditTasks, setShowEditTasks] = useState(false);
   const [editTaskList, setEditTaskList] = useState([]);
   const [showEditRoles, setShowEditRoles] = useState(false);
   const [editRoles, setEditRoles] = useState({});
   const [editingTaskGroup, setEditingTaskGroup] = useState(null);
   const [editingTaskValue, setEditingTaskValue] = useState("");
-  const [reqSent, setReqSent] = useState(false);
+
+  const [editingNotes, setEditingNotes] = useState({});
+
+  const [showRange, setShowRange] = useState(false);
+  const [rangeName, setRangeName] = useState("");
+  const [rangeType, setRangeType] = useState("semester");
+  const [rangeFrom, setRangeFrom] = useState("");
+  const [rangeTo, setRangeTo] = useState("");
 
   useEffect(() => {
     setLoading(true);
-    let got = { cfg: false, abs: false, reqs: false, ov: false };
-    function checkDone() { if (got.cfg && got.abs && got.reqs && got.ov) setLoading(false); }
+    let got = { cfg: false, abs: false, ov: false };
+    function checkDone() { if (got.cfg && got.abs && got.ov) setLoading(false); }
     const u1 = storage.subscribe("schedule-config", (r) => {
       let cfg = r ? JSON.parse(r.value) : defaultScheduleConfig();
       if (cfg.tasks && !cfg.rotatingTasks) { cfg.rotatingTasks = cfg.tasks; delete cfg.tasks; }
@@ -36,21 +39,14 @@ export default function SchedulePage({ weekNum, year, isAdmin, flashSaved, s, t 
     const u2 = storage.subscribe(`y${year}-abs-${weekNum}`, (r) => {
       setAbsences(r ? JSON.parse(r.value) : {}); got.abs = true; checkDone();
     });
-    const u3 = storage.subscribe(`y${year}-reqs-${weekNum}`, (r) => {
-      setRequests(r ? JSON.parse(r.value) : []); got.reqs = true; checkDone();
-    });
     const u4 = storage.subscribe(`y${year}-taskover-${weekNum}`, (r) => {
       setTaskOverrides(r ? JSON.parse(r.value) : {}); got.ov = true; checkDone();
     });
-    return () => { u1(); u2(); u3(); u4(); };
+    return () => { u1(); u2(); u4(); };
   }, [weekNum, year]);
 
   async function saveConfig(cfg) { setConfig(cfg); try { await storage.set("schedule-config", JSON.stringify(cfg), true); flashSaved(); } catch (e) {} }
   async function saveAbsences(abs) { setAbsences(abs); try { await storage.set(`y${year}-abs-${weekNum}`, JSON.stringify(abs), true); flashSaved(); } catch (e) {} }
-  async function saveRequests(reqs) {
-    setRequests(reqs);
-    try { let r = await storage.set(`y${year}-reqs-${weekNum}`, JSON.stringify(reqs), true); if (r) flashSaved(); } catch (e) { console.log("saveRequests error: " + e.message); }
-  }
   async function saveTaskOverrides(ov) { setTaskOverrides(ov); try { await storage.set(`y${year}-taskover-${weekNum}`, JSON.stringify(ov), true); flashSaved(); } catch (e) {} }
 
   function getTaskForGroup(gi) {
@@ -73,16 +69,51 @@ export default function SchedulePage({ weekNum, year, isAdmin, flashSaved, s, t 
   function resetTaskOverride(gi) { let u = { ...taskOverrides }; delete u[gi]; saveTaskOverrides(u); }
 
   function getAbsence(name, di) { return absences[`${name}-${di}`] || "none"; }
-  function setAbsence(name, di, type) { let u = { ...absences }; if (type === "none") delete u[`${name}-${di}`]; else u[`${name}-${di}`] = type; saveAbsences(u); }
-
-  function submitRequest() {
-    if (!reqName.trim()) return;
-    let newReq = { id: Date.now(), name: reqName.trim(), day: reqDay, type: reqType, status: "pending" };
-    saveRequests([...requests, newReq]);
-    setShowRequest(false); setReqName(""); setReqSent(true); setTimeout(() => setReqSent(false), 3000);
+  function setAbsence(name, di, type) {
+    let u = { ...absences };
+    if (type === "none") { delete u[`${name}-${di}`]; delete u[`${name}-${di}-note`]; }
+    else u[`${name}-${di}`] = type;
+    saveAbsences(u);
   }
-  function approveRequest(req) { let di = DAYS.indexOf(req.day); if (di >= 0) setAbsence(req.name, di, req.type); saveRequests(requests.filter((r) => r.id !== req.id)); }
-  function denyRequest(id) { saveRequests(requests.filter((r) => r.id !== id)); }
+  function setAbsenceNote(name, di, text) {
+    const noteKey = `${name}-${di}-note`;
+    let u = { ...absences };
+    if (!text) delete u[noteKey]; else u[noteKey] = text;
+    saveAbsences(u);
+  }
+
+  async function applyAbsenceRange() {
+    if (!rangeName || !rangeFrom || !rangeTo) return;
+    const from = new Date(rangeFrom + "T00:00:00");
+    const to = new Date(rangeTo + "T00:00:00");
+    if (from > to) return;
+
+    const byWeek = {};
+    const cur = new Date(from);
+    while (cur <= to) {
+      const wn = getWeekNumber(cur);
+      const wy = cur.getFullYear();
+      const wkey = `${wy}-${wn}`;
+      if (!byWeek[wkey]) byWeek[wkey] = { wy, wn, days: [] };
+      byWeek[wkey].days.push((cur.getDay() + 6) % 7);
+      cur.setDate(cur.getDate() + 1);
+    }
+
+    for (const { wy, wn, days } of Object.values(byWeek)) {
+      await storage.adjust(`y${wy}-abs-${wn}`, (current) => {
+        const abs = current || {};
+        const updated = { ...abs };
+        for (const di of days) {
+          if (rangeType === "none") delete updated[`${rangeName}-${di}`];
+          else updated[`${rangeName}-${di}`] = rangeType;
+        }
+        return updated;
+      });
+    }
+    flashSaved();
+    setShowRange(false);
+    setRangeName(""); setRangeFrom(""); setRangeTo(""); setRangeType("semester");
+  }
 
   function addMember(gi) { if (!newMemberName.trim() || !config) return; let u = { ...config, groups: config.groups.map((g, i) => i === gi ? { ...g, members: [...g.members, newMemberName.trim()] } : g) }; saveConfig(u); setNewMemberName(""); setShowAddMember(null); }
   function removeMember(gi, mi) { if (!config) return; let u = { ...config, groups: config.groups.map((g, i) => i === gi ? { ...g, members: g.members.filter((_, j) => j !== mi) } : g) }; saveConfig(u); }
@@ -90,7 +121,7 @@ export default function SchedulePage({ weekNum, year, isAdmin, flashSaved, s, t 
   function addGroup() { if (!config) return; saveConfig({ ...config, groups: [...config.groups, { name: `Grupp ${config.groups.length + 1}`, members: [], fixedTask: null }] }); }
   function removeGroup(gi) { if (!config) return; saveConfig({ ...config, groups: config.groups.filter((_, i) => i !== gi) }); }
   function toggleFixed(gi) {
-    if (!config) return; let g = config.groups[gi]; let task = getTaskForGroup(gi);
+    if (!config) return; let task = getTaskForGroup(gi);
     let u = { ...config, groups: config.groups.map((grp, i) => i === gi ? { ...grp, fixedTask: grp.fixedTask ? null : (task || "Fast uppgift") } : grp) };
     saveConfig(u);
   }
@@ -98,56 +129,40 @@ export default function SchedulePage({ weekNum, year, isAdmin, flashSaved, s, t 
   function saveRolesEdit() { if (!config) return; saveConfig({ ...config, roles: { ...editRoles } }); setShowEditRoles(false); }
 
   if (loading || !config) return <p style={{ textAlign: "center", color: t.textMuted, padding: "40px" }}>Laddar...</p>;
-  let pendingReqs = requests.filter((r) => r.status === "pending");
+  const allMembers = config.groups.flatMap((g) => g.members);
 
   return (
     <>
-      {/* admin: pending requests */}
-      {isAdmin && pendingReqs.length > 0 && (
-        <div style={s.requestsBar}>
-          <div style={{ fontSize: "13px", fontWeight: 600, color: t.gold, marginBottom: "8px" }}>📨 {pendingReqs.length} frånvaroförfrågan att hantera</div>
-          {pendingReqs.map((req) => (
-            <div key={req.id} style={s.requestRow}>
-              <span style={{ flex: 1, fontSize: "13px", color: t.text }}><strong>{req.name}</strong> — {req.day} — {ABSENCE_TYPES[req.type]?.label || req.type}</span>
-              <button style={s.approveBtn} onClick={() => approveRequest(req)}>✓ Godkänn</button>
-              <button style={s.denyBtn} onClick={() => denyRequest(req.id)}>✗ Neka</button>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* user: request button */}
-      {!isAdmin && (
-        <div style={{ marginBottom: "12px" }}>
-          <button style={s.requestBtn} onClick={() => setShowRequest(true)}>📝 Begär frånvaro</button>
-          {reqSent && <span style={{ marginLeft: "10px", color: t.green, fontSize: "13px", fontWeight: 600 }}>✓ Förfrågan skickad!</span>}
-          {pendingReqs.length > 0 && (
-            <div style={{ marginTop: "8px", padding: "10px 14px", background: t.accentBg, border: `1px solid ${t.accentBorder}`, borderRadius: "10px" }}>
-              <div style={{ fontSize: "12px", color: t.accent, marginBottom: "6px", fontWeight: 600 }}>Väntande förfrågningar:</div>
-              {pendingReqs.map((req) => (
-                <div key={req.id} style={{ fontSize: "12px", color: t.textMuted, padding: "3px 0" }}>⏳ <strong>{req.name}</strong> — {req.day} — {ABSENCE_TYPES[req.type]?.label || req.type}</div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* request modal */}
-      {showRequest && (
-        <div style={s.overlay}><div style={s.modal}>
-          <h3 style={{ margin: "0 0 12px 0", color: t.textStrong }}>Begär frånvaro</h3>
+      {/* absence range modal */}
+      {showRange && (
+        <div style={s.overlay}><div style={{ ...s.modal, maxWidth: "380px", width: "90%" }}>
+          <h3 style={{ margin: "0 0 12px 0", color: t.textStrong }}>Frånvaroperiod</h3>
           <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-            <input type="text" placeholder="Ditt namn" value={reqName} onChange={(e) => setReqName(e.target.value)} style={s.textInput} />
-            <select value={reqDay} onChange={(e) => setReqDay(e.target.value)} style={s.selectInput}>
-              {DAYS.map((d) => <option key={d} value={d}>{d}</option>)}
+            <select value={rangeName} onChange={(e) => setRangeName(e.target.value)} style={s.selectInput}>
+              <option value="">Välj person…</option>
+              {allMembers.map((m) => <option key={m} value={m}>{m}</option>)}
             </select>
-            <select value={reqType} onChange={(e) => setReqType(e.target.value)} style={s.selectInput}>
-              <option value="semester">Semester</option><option value="sjuk">Sjuk</option><option value="vab">VAB</option><option value="annan">Annan frånvaro</option>
+            <select value={rangeType} onChange={(e) => setRangeType(e.target.value)} style={s.selectInput}>
+              <option value="semester">Semester</option>
+              <option value="sjuk">Sjuk</option>
+              <option value="vab">VAB</option>
+              <option value="annan">Övrigt</option>
             </select>
+            <div style={{ display: "flex", gap: "8px" }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: "11px", color: t.textMuted, marginBottom: "4px" }}>Från</div>
+                <input type="date" value={rangeFrom} onChange={(e) => setRangeFrom(e.target.value)} style={{ ...s.textInput, width: "100%", boxSizing: "border-box" }} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: "11px", color: t.textMuted, marginBottom: "4px" }}>Till</div>
+                <input type="date" value={rangeTo} onChange={(e) => setRangeTo(e.target.value)} style={{ ...s.textInput, width: "100%", boxSizing: "border-box" }} />
+              </div>
+            </div>
           </div>
           <div style={{ display: "flex", gap: "8px", marginTop: "14px" }}>
-            <button style={s.modalBtnCancel} onClick={() => setShowRequest(false)}>Avbryt</button>
-            <button style={s.modalBtnOk} onClick={submitRequest}>Skicka</button>
+            <button style={s.modalBtnCancel} onClick={() => setShowRange(false)}>Avbryt</button>
+            <button style={{ ...s.modalBtnOk, opacity: (!rangeName || !rangeFrom || !rangeTo) ? 0.5 : 1 }}
+              onClick={applyAbsenceRange} disabled={!rangeName || !rangeFrom || !rangeTo}>Applicera</button>
           </div>
         </div></div>
       )}
@@ -205,14 +220,17 @@ export default function SchedulePage({ weekNum, year, isAdmin, flashSaved, s, t 
         </div></div>
       )}
 
-      {/* admin toolbar */}
-      {isAdmin && (
-        <div style={{ display: "flex", gap: "8px", marginBottom: "12px", flexWrap: "wrap" }}>
-          <button style={s.smallBtn} onClick={() => { setEditTaskList([...(config.rotatingTasks || [])]); setShowEditTasks(true); }}>✏️ Roterande uppgifter</button>
-          <button style={s.smallBtn} onClick={() => { setEditRoles({ ...config.roles }); setShowEditRoles(true); }}>👥 Roller</button>
-          <button style={s.smallBtn} onClick={addGroup}>+ Grupp</button>
-        </div>
-      )}
+      {/* toolbar */}
+      <div style={{ display: "flex", gap: "8px", marginBottom: "12px", flexWrap: "wrap" }}>
+        <button style={s.requestBtn} onClick={() => { setRangeName(allMembers[0] || ""); setShowRange(true); }}>📅 Frånvaroperiod</button>
+        {isAdmin && (
+          <>
+            <button style={s.smallBtn} onClick={() => { setEditTaskList([...(config.rotatingTasks || [])]); setShowEditTasks(true); }}>✏️ Roterande uppgifter</button>
+            <button style={s.smallBtn} onClick={() => { setEditRoles({ ...config.roles }); setShowEditRoles(true); }}>👥 Roller</button>
+            <button style={s.smallBtn} onClick={addGroup}>+ Grupp</button>
+          </>
+        )}
+      </div>
 
       {/* roles */}
       {config.roles && Object.keys(config.roles).length > 0 && (
@@ -277,14 +295,34 @@ export default function SchedulePage({ weekNum, year, isAdmin, flashSaved, s, t 
                       {DAYS.map((_, di) => {
                         let absType = getAbsence(member, di);
                         let info = ABSENCE_TYPES[absType] || ABSENCE_TYPES.none;
+                        const noteKey = `${member}-${di}-note`;
+                        const savedNote = absences[noteKey] || "";
+                        const editKey = `${member}-${di}`;
+                        const currentNote = editingNotes[editKey] ?? savedNote;
                         return (
                           <td key={di} style={{ ...s.schedCell, background: info.color }} title={info.label !== "–" ? info.label : ""}>
-                            {isAdmin && (
-                              <select value={absType} onChange={(e) => setAbsence(member, di, e.target.value)} style={s.absSelect}>
-                                <option value="none">–</option><option value="semester">🏖️</option><option value="sjuk">🤒</option><option value="vab">👶</option><option value="annan">📌</option>
-                              </select>
+                            <select value={absType} onChange={(e) => setAbsence(member, di, e.target.value)} style={s.absSelect}>
+                              <option value="none">–</option>
+                              <option value="semester">🏖️</option>
+                              <option value="sjuk">🤒</option>
+                              <option value="vab">👶</option>
+                              <option value="annan">📌</option>
+                            </select>
+                            {absType !== "none" && (
+                              <input
+                                type="text"
+                                value={currentNote}
+                                onChange={(e) => setEditingNotes((p) => ({ ...p, [editKey]: e.target.value }))}
+                                onBlur={() => {
+                                  const val = (editingNotes[editKey] ?? savedNote).trim();
+                                  setAbsenceNote(member, di, val);
+                                  setEditingNotes((p) => { const u = { ...p }; delete u[editKey]; return u; });
+                                }}
+                                onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
+                                placeholder="fm, 2h…"
+                                style={{ width: "100%", fontSize: "10px", background: "transparent", border: "none", borderTop: "1px solid rgba(255,255,255,0.2)", color: info.text, textAlign: "center", padding: "2px 0", outline: "none", boxSizing: "border-box" }}
+                              />
                             )}
-                            {!isAdmin && info.label !== "–" && <span style={{ fontSize: "11px", color: info.text, fontWeight: 600 }}>{info.label}</span>}
                           </td>
                         );
                       })}
